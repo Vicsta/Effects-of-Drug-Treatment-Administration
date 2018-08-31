@@ -550,7 +550,7 @@ ggplot(data = relig) +
 install.packages("reshape")
 ```
 
-```{r}
+```{r plot Religion Drug Compare}
 table <- matrix(nrow = 0, ncol = 3)
 colnames(table) <- c("Total", "No Drug", "Drug")
 
@@ -577,8 +577,8 @@ ggplot(data.m, aes(Names, value)) +
   theme(axis.text.x = element_text(angle = 20, hjust = 1))
 ```
 
-```{r}
-data
+```{r plot Religion Drug Percent}
+#data
 
 par(mfrow = c(2,3))
 for(i in seq(1 : length(topRel))) {
@@ -622,6 +622,114 @@ With the correlation between drug usage in non fatal diagnosis and death, throug
   - None of the top religions have stringent views on medication
   - Religions that would have stringent views on medication would likely not seek medical attention in the first place.
 
+### Ethnicity
 
+Similar to age is ethnicity.
 
+```{r plot Ethnicity Distribution Scatter}
+table <- table(patsInfo["ETHNICITY"])
+
+plot(c(table), xlab = "Ethnic Index", ylab = "Count", main = "Ethnic Distribution")
+```
+
+```{r plot Top 5 Ethnicity Patients}
+table <- table(patsInfo$ETHNICITY)
+#str(table)
+x <- c()
+y <- c()
+rowns <- rownames(table)
+rowvals <- c()
+
+for(row in table) {
+  rowvals <- c(rowvals, row)
+}
+
+for(index in 1:length(rowvals)) {
+  if(rowvals[index] > 1000) {
+    x <- c(rowns[index], x)
+    y <- c(rowvals[index], y)
+  }
+}
+#x
+#y
+
+topEth <- c()
+
+eth <- matrix(, nrow = 0, ncol = 0)
+for(r in x) {
+  topEth <- c(topEth, r)
+  eth <- rbind(patsInfo[factor(patsInfo[, "ETHNICITY"]) == r,], eth)
+}
+
+ggplot(data = eth) +
+  geom_bar(mapping = aes(x = ETHNICITY, fill=ADMISSION_TYPE)) + 
+  xlab("Ethnicity") +
+  ylab("Count") + 
+  guides(fill=guide_legend(title="Admission Type")) +
+  theme(axis.text.x = element_text(angle = 20, hjust = 1))
+```
+
+```{r plot Ethnicity Drug Compare}
+table <- matrix(nrow = 0, ncol = 3)
+colnames(table) <- c("Total", "No Drug", "Drug")
+
+for(r in topEth) {
+  df <- eth[eth[, "ETHNICITY"] == r,]
+  nodrugr <- df[is.na(df[, "DRUG"]),]
+  drugr <- df[!is.na(df[, "DRUG"]),]
+  table <- rbind(table, c(nrow(df), nrow(nodrugr), nrow(drugr)))
+}
+
+rownames(table) <- topEth
+
+Names <- topEth
+
+data=data.frame(cbind(table), Names)
+
+# melt the data frame for plotting
+data.m <- melt(data, id.vars='Names')
+
+# plot everything
+ggplot(data.m, aes(Names, value)) +   
+  geom_bar(aes(fill = variable), position = "dodge", stat="identity") +
+  theme(axis.text.x = element_text(angle = 20, hjust = 1))
+```
+
+```{r plot Ethnicity Drug Percent}
+#data
+
+par(mfrow = c(2,3))
+for(i in seq(1 : length(topEth))) {
+  pie(c(data[i,]$No.Drug, data[i,]$Drug), labels = c("No Drug", "Drug"), col=rainbow(2), main =topEth[i])
+}
+```
+
+```{r}
+table <- matrix(nrow = 0, ncol = 3)
+colnames(table) <- c("Total", "No Drug", "Drug")
+
+for(r in topEth) {
+  df <- eth[eth[, "ETHNICITY"] == r,]
+  df <- df[df[, "DIAGNOSIS"] == "NEWBORN",]
+  nodrugr <- df[is.na(df[, "DRUG"]),]
+  drugr <- df[!is.na(df[, "DRUG"]),]
+  table <- rbind(table, c(nrow(df), nrow(nodrugr), nrow(drugr)))
+}
+
+rownames(table) <- topEth
+```
+
+```{r}
+table[, 2:3]
+# Run chi-square test
+chisq.test(table[, 2:3])
+
+table[c(1, 3, 4, 5, 6), 2:3]
+# Run chi-square test
+chisq.test(table[c(1, 3, 4, 5, 6), 2:3])
+```
+
+#### Insurance
+
+### Age
 
