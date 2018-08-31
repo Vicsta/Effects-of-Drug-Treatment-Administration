@@ -1,0 +1,627 @@
+---
+title: "vgt219 Final Project"
+author: "Vicsta"
+date: "August 24, 2018"
+output: html_document
+html_document:
+  keep_md: yes
+---
+
+#The effects of Drugs and its usages on Critical Mortality
+
+The main goal of this project is to better understand the role drugs play within a critical hospital admission. This is so we can study if there may be a issue of over diagnosing or over prescribing drugs. This could occur due to many reasons such as doctor's experience, patient characteristics, etc. To approach this problem, the MIMIC-III critical database was used as the primary data source.
+
+Hypothesis: Patients who expired recieved more than the average number of medications than those who didn't for a given diagnosis. Of these instances, majority occured through the facilitation of a doctor with a lesser education.
+
+```{r}
+# Get our library dependencies
+library(RCurl)
+library("tidyverse")
+```
+
+The datasets were first downloaded locally, then lodaded into R because pulling them directly from the internet took considerable time to run.
+
+```{r}
+# Load our datasets
+
+URL_start <- "http://www.hpc.med.nyu.edu/~kannak01/MIMIC3/"
+Local <- "C:/Users/vtrea/Desktop/"
+ends <- c("ADMISSIONS.csv", "ICUSTAYS.csv", "INPUTEVENTS_MV.csv", "PATIENTS.csv", "PRESCRIPTIONS.csv")
+
+for(i in seq(length(ends))) {
+  ends[i] = paste(Local, ends[i], sep="")
+}
+
+ADMS <- read.csv("C:/Users/vtrea/Desktop/ADMISSIONS.csv", header=TRUE, sep=",")
+#ICU <- read.csv("C:/Users/vtrea/Desktop/ICUSTAYS.csv", header=TRUE, sep=",")
+#INPUT <- read.csv("C:/Users/vtrea/Desktop/INPUTEVENTS_MV.csv", header=TRUE, sep=",")
+PRES <- read.csv("C:/Users/vtrea/Desktop/PRESCRIPTIONS.csv", header=TRUE, sep=",")
+#DRGCODES <- read.csv("C:/Users/vtrea/Desktop/drgcodes.csv", header=TRUE, sep=",")
+```
+
+## Understanding Admission Cause
+
+```{r eval=FALSE}
+?data.frame
+df <- data.frame(stringsAsFactors=FALSE)
+
+#Reduce by Key Prescription table
+
+for(row in 1:nrow(PRES)) {
+  
+  addSubj <- PRES[row, "SUBJECT_ID"]
+  rowLoc <- NA
+  found <- FALSE
+    
+  for(innerRow in 1:nrow(df)) {
+    if(identical(strtoi(df[innerRow, "SUBJECT_ID"]), addSubj)) {
+      rowLoc <- innerRow
+      found <- TRUE
+      break
+    }
+  }
+  
+  if(is.na(rowLoc)) {
+    rowLoc <- nrow(df) + 1
+  }
+  
+  for(col in colnames(PRES)) {
+    #print(paste(df[[rowLoc, col]], PRES[[row, col]], sep=";"))
+    if(!found) {
+      df[rowLoc, col] <- as.character(PRES[[row, col]])
+    } else {
+      df[rowLoc, col] <- paste(as.character(df[[rowLoc, col]]), as.character(PRES[[row, col]]), sep=";")
+    }
+  }
+    df[rowLoc, "SUBJECT_ID"] <- addSubj
+}
+```
+
+To begin, we first want to isolate the answer to the question:
+
+  What causes the most deaths in the ICU?
+
+The ADMISSIONS data from MIMIC-III provides information on a patient such as where they were admitted, what they were admitted for, and whether or not they died from their diagnosis or not. This data set is more useful than the PATIENTS dataset, because the PATIENTS data does not include any form of diagnosis, and we would have to join the dataset with another table in order to get that information. By using ADMISSIONS, for now we can omit that step and solely look at the outcomes per individual visit, not per patient, because a patient could have multiple visits and we want to isolate the diagnostic that led to the patient expiring on that specific visit. For repeat visitors, we can investigate to see whether or not there is a correlation between previous diagnostics and fatal diagnostics at a later admission.
+
+```{r plot Overall Deaths}
+ggplot(data = ADMS) +
+  geom_bar(mapping = aes(x = DEATHTIME != "", fill=ADMISSION_TYPE)) + 
+  xlab("Patient Died after Admission") +
+  ylab("Count") + 
+  guides(fill=guide_legend(title="Admission Type"))
+```
+
+From the above plot, we can see that there are about ~6500 patients that expired during admission, most of which unsurprisingly occur within the EMERGENCY admission.
+
+### Understanding Main Diagnostics
+
+#### Fatal Diagnostics
+
+There are thousands of levels in the diagnosis section, so in order to achieve a meaningful visualization, we use a scatterplot in order to try find any outliers to explore further.
+
+```{r plot Fatal Diagnosis Distribution Scatter}
+
+DEATHADMS <- ADMS[ADMS[, "DEATHTIME"] != "",]
+  table <- table(DEATHADMS$DIAGNOSIS)
+
+  plot(c(table), xlab = "Diagnosis Index", ylab = "Count", main = "Fatal Diagnosis Distribution")
+```
+
+As we can see, we have a few outliers occuring at above the count of 50, so we can filter these out to achieve a better understanding of the main causes of fatalities within the facility.
+
+```{r}
+table <- table(DEATHADMS$DIAGNOSIS)
+#str(table)
+x <- c()
+y <- c()
+rowns <- rownames(table)
+rowvals <- c()
+
+for(row in table) {
+  rowvals <- c(rowvals, row)
+}
+
+for(index in 1:length(rowvals)) {
+  if(rowvals[index] > 60) {
+    x <- c(rowns[index], x)
+    y <- c(rowvals[index], y)
+  }
+}
+#x
+#y
+
+filtered <- matrix(, nrow = 0, ncol = 0)
+for(diag in x) {
+  filtered <- rbind(DEATHADMS[factor(DEATHADMS[, "DIAGNOSIS"]) == diag,], filtered)
+}
+```
+
+```{r plot Subset Fatal Diagnostics}
+ggplot(data = filtered) +
+  geom_bar(mapping = aes(x = DIAGNOSIS, fill=ADMISSION_TYPE)) +
+  xlab("Patient Diagnosis") +
+  ylab("Count") + 
+  guides(fill=guide_legend(title="Diagnosis")) +
+  theme(axis.text.x = element_text(angle = 20, hjust = 1))
+```
+
+Even after narrowing it down to only diagnoses with death counts over 60, we can see that we can do better. 
+
+```{r}
+table <- table(DEATHADMS$DIAGNOSIS)
+#str(table)
+x <- c()
+y <- c()
+rowns <- rownames(table)
+rowvals <- c()
+
+for(row in table) {
+  rowvals <- c(rowvals, row)
+}
+
+for(index in 1:length(rowvals)) {
+  if(rowvals[index] > 150) {
+    x <- c(rowns[index], x)
+    y <- c(rowvals[index], y)
+  }
+}
+#x
+#y
+
+fatalfilt <- matrix(, nrow = 0, ncol = 0)
+for(diag in x) {
+  fatalfilt <- rbind(DEATHADMS[factor(DEATHADMS[, "DIAGNOSIS"]) == diag,], fatalfilt)
+}
+```
+
+Narrowing it down even further, we can get: 
+
+```{r plot Top 3 Fatal Diagnostics}
+ggplot(data = fatalfilt) +
+  geom_bar(mapping = aes(x = DIAGNOSIS, fill=ADMISSION_TYPE)) +
+  xlab("Patient Diagnosis") +
+  ylab("Count") + 
+  guides(fill=guide_legend(title="Diagnosis"))
+```
+
+Now we can see that Sepsis, Intracranial Hemorrhage, and Pneumonia are the top causes of death within the ICU, with Sepsis being slightly ahead of the others.
+
+#### Non Fatal Diagnostics
+
+To find the top most non-fatal diagnoses, we apply the same method. We first look at the scatterplot distribution in order to get an idea of the threshold to filter out diagnostics to get the top non-fatal diagnoses.
+
+```{r plot Non-Fatal Diagnosis Distribution Scatter}
+
+NODEATHADMS <- ADMS[ADMS[, "DEATHTIME"] == "",]
+table <- table(NODEATHADMS$DIAGNOSIS)
+
+plot(c(table), xlab = "Diagnosis Index", ylab = "Count", main = "Non-Fatal Diagnosis Distribution")
+```
+
+Then, applying our own filter we extract those who only have an occurence greater than 800.
+
+```{r}
+table <- table(NODEATHADMS$DIAGNOSIS)
+#str(table)
+x <- c()
+y <- c()
+rowns <- rownames(table)
+rowvals <- c()
+
+for(row in table) {
+  rowvals <- c(rowvals, row)
+}
+
+for(index in 1:length(rowvals)) {
+  if(rowvals[index] > 800) {
+    x <- c(rowns[index], x)
+    y <- c(rowvals[index], y)
+  }
+}
+#x
+#y
+
+nonfatalfilt <- matrix(, nrow = 0, ncol = 0)
+for(diag in x) {
+  nonfatalfilt <- rbind(NODEATHADMS[factor(NODEATHADMS[, "DIAGNOSIS"]) == diag,], nonfatalfilt)
+}
+```
+
+```{r plot Top 5 Non-Fatal Diagnostics}
+ggplot(data = filtered) +
+  geom_bar(mapping = aes(x = DIAGNOSIS, fill=ADMISSION_TYPE)) +
+  xlab("Patient Diagnosis") +
+  ylab("Count") + 
+  guides(fill=guide_legend(title="Diagnosis")) +
+  theme(axis.text.x = element_text(angle = 20, hjust = 1))
+```
+
+## Effect of Drugs on Mortality
+
+### Exploration on Overall Data
+
+In order to explore the correlations between patient deaths and drug usage, we need to join the prescription data with the admission data.
+
+```{r}
+ADMPRES <- merge(x = ADMS, y = PRES, by = "HADM_ID", all.x = TRUE, all.y = FALSE)
+```
+
+Performing a left outer join we make sure we keep patients who were admitted but did not recieve any drugs.
+
+First, we want to explore tests to see whether or not death is related to the presence of a prescription using a Chi-square test.
+
+```{r}
+nodups <- ADMPRES[!duplicated(ADMPRES[, "SUBJECT_ID.x"]),]
+```
+
+By removing duplicates we can make sure we only take one entry per person.
+
+```{r eval=FALSE}
+install.packages("plotrix")
+```
+
+```{r}
+library(plotrix)
+
+table <- table(is.na(nodups["DRUG"]))
+
+#print(table)
+
+pie3D(table, theta=pi/3, explode=0.2, labels=c("Drugs Used", "No Drugs Used"))
+```
+
+```{r}
+nodrug <- nodups[is.na(nodups[, "DRUG"]),]
+drug <- nodups[!is.na(nodups[, "DRUG"]),]
+
+death_nodrug <- nodrug[nodrug[, "DEATHTIME"] != "",]
+death_drug <- drug[drug[, "DEATHTIME"] != "",]
+
+nodeath_nodrug <- nodrug[nodrug[, "DEATHTIME"] == "",]
+nodeath_drug <- drug[drug[, "DEATHTIME"] == "",]
+
+#print(death_nodrug);
+#print(death_drug);
+#print(nodeath_nodrug);
+#print(nodeath_drug);
+```
+
+```{r}
+# Make a data table and define row names and column names
+tab <- matrix(c(nrow(death_drug),nrow(nodeath_drug),nrow(death_nodrug),nrow(nodeath_nodrug)),2,2)
+rownames(tab)<-c("DEATH","NO DEATH")
+colnames(tab)<-c("DRUG|","NO DRUG")
+tab
+# Run chi-square test
+chisq.test(tab)
+```
+
+Thus, from the smalle p-value we can infer that there is good association between patient deaths (DEATHTIME) and the administration of drugs (DRUG).
+
+However, this result does not completely validate our assumption that prescription accidents are a cause of death. Our Chi squared test only tells us that more often in procedures that use drugs, a patient death occurs. This can be entireley explained by the fact that more risky procedures and life threatening ones would require drugs whereas lesser risk ones would not. 
+
+We can further explore our assumption by then testing the correlation both in life threatening and non life threatening cases.
+
+### Drugs in Fatal Cases
+
+From earlier, we found that SEPSIS is the cause of most patient deaths, so from our filtered data frames without duplicates and on certain parameters, we isolate only those who are diagnosed with sepsis, then run a Chi-squared test to check correlation again.
+
+Because the amount of data is small, I also run a  Fisher's exact test.
+
+```{r}
+death_nodrugf <- death_nodrug[death_nodrug[, "DIAGNOSIS"] == "SEPSIS",]
+death_drugf <- death_drug[death_drug[, "DIAGNOSIS"] == "SEPSIS",]
+
+nodeath_nodrugf <- nodeath_nodrug[nodeath_nodrug[, "DIAGNOSIS"] == "SEPSIS",]
+nodeath_drugf <- nodeath_drug[nodeath_drug[, "DIAGNOSIS"] == "SEPSIS",]
+
+#print(death_nodrugf);
+#print(death_drugf);
+#print(nodeath_nodrugf);
+#print(nodeath_drugf);
+```
+
+```{r}
+# Make a data table and define row names and column names
+tab <- matrix(c(nrow(death_drugf),nrow(nodeath_drugf),nrow(death_nodrugf),nrow(nodeath_nodrugf)),2,2)
+rownames(tab)<-c("DEATH","NO DEATH")
+colnames(tab)<-c("DRUG|","NO DRUG")
+tab
+# Run chi-square test
+chisq.test(tab)
+# Run a Fisher test because data sample is small
+fisher.test(tab)
+```
+
+As we can see, here the p-value has drastically changed, as is now above the 0.05 significance level, meaing we cannot reject the null hypothesis that the odds of dying with drugs are the same as the odds of dying without drugs.
+
+### Drugs in Non-Fatal Cases
+
+Moving on the the cases of non-fatal diagnostics, we see that newborns are the highest number of admitted diagnosis that doesn't lead to death. Similarly, we isolate these diagnostics from our filtered data, and run association tests.
+
+```{r}
+death_nodrugn <- death_nodrug[death_nodrug[, "DIAGNOSIS"] == "NEWBORN",]
+death_drugn <- death_drug[death_drug[, "DIAGNOSIS"] == "NEWBORN",]
+
+nodeath_nodrugn <- nodeath_nodrug[nodeath_nodrug[, "DIAGNOSIS"] == "NEWBORN",]
+nodeath_drugn <- nodeath_drug[nodeath_drug[, "DIAGNOSIS"] == "NEWBORN",]
+
+#print(death_nodrugf);
+#print(death_drugf);
+#print(nodeath_nodrugf);
+#print(nodeath_drugf);
+```
+
+```{r}
+# Make a data table and define row names and column names
+tab <- matrix(c(nrow(death_drugn),nrow(nodeath_drugn),nrow(death_nodrugn),nrow(nodeath_nodrugn)),2,2)
+rownames(tab)<-c("DEATH","NO DEATH")
+colnames(tab)<-c("DRUG|","NO DRUG")
+tab
+# Run chi-square test
+chisq.test(tab)
+# Run a Fisher test because data sample  relatively small
+fisher.test(tab)
+```
+
+Here we can see that the while the p-value has incresed, it tsill remains below the 0.05 level, meaning we can reject the null hypothesis that states the odds of dying with drugs are the same as the odds of dying without drugs.
+
+### Interpreting the Results
+
+As we have seen, from this section we explored if for our hypothesis, there truly exists an association between the presence of drug admission and patient mortality. From the data as a whole, running a Chi-squared test yields an extremely low p-value on the whole data set, which would indicate some association is present. Because this is a critical care database, there are two extrema we should evaluate in order to assert our results: checking the most extreme diagnostics, the ones that produce the highest mortalities, and the ones that produce the lowest mortalities.
+
+Through our investigation of sepsis, we found that when it comes to highest rate of mortalities, we actually cannot accept our original hypothesis, because our sepsis test resulted in a p-value far above the level of significane. This may be due to a few reasons:
+
+  - There may be insufficient data points for test, after all on no drugs there were only 14 vs 21 entries.
+  - This insufficient data can be explained by the definition of sepsis. By definition, "Sepsis is a life-threatening condition that arises when the body's response to infection causes injury to its own tissues and organs." which is generally caused through infection of a wound. Recommended treatment is to have antibiotics pumped intravenously within the first hour of diagnosis, thereby eliminating the possibility of treatment without drugs.
+  
+We can run another quick association test to try test this reasoning. Take pneumonia for example. By definition, pneumonia is "lung inflammation caused by bacterial or viral infection, in which the air sacs fill with pus and may become solid." In very mild cases, this can be treated without the use of many, if any, drugs.
+
+
+```{r}
+death_nodrugp <- death_nodrug[death_nodrug[, "DIAGNOSIS"] == "PNEUMONIA",]
+death_drugp <- death_drug[death_drug[, "DIAGNOSIS"] == "PNEUMONIA",]
+
+nodeath_nodrugp <- nodeath_nodrug[nodeath_nodrug[, "DIAGNOSIS"] == "PNEUMONIA",]
+nodeath_drugp <- nodeath_drug[nodeath_drug[, "DIAGNOSIS"] == "PNEUMONIA",]
+
+#print(death_nodrugf);
+#print(death_drugf);
+#print(nodeath_nodrugf);
+#print(nodeath_drugf);
+```
+
+```{r}
+# Make a data table and define row names and column names
+tab <- matrix(c(nrow(death_drugp),nrow(nodeath_drugp),nrow(death_nodrugp),nrow(nodeath_nodrugp)),2,2)
+rownames(tab)<-c("DEATH","NO DEATH")
+colnames(tab)<-c("DRUG|","NO DRUG")
+tab
+# Run chi-square test
+chisq.test(tab)
+# Run a Fisher test because data sample is small
+fisher.test(tab)
+```
+
+Running our tests again, we can see that our p-value for pneumonia, the second highest cause of mortality rates, is under the significance level of 0.05. However, we again run into the issue where our category for now drugs is extremely low, due to the nature of the ailment.
+
+Due to these conditions, it would be wise to re-evaluate our hypothesis. Rather than taking a broad stance on the use of drugs in all cases, we should narrow our scope down to better identify the use of drugs where it is less needed as a cause for patient expiry.
+
+Hypothesis: In cases where patients were diagnosed with common diagnoses that have low numbers of mortality, patients were more likely to expire if they are administered drugs. Of these instances, majority occured through the facilitation of a caregiver with a lesser experience.
+
+## Exploring Caregiver Qualifications
+
+Chart events joins on caregivers
+admissions joins on chart events on HADM_ID
+
+In order to get the caregiver data joined on the admission / prescription data, we need to first link it to the CHARTEVENTS data on CGID. From there, the CHARTEVENTS data can be joined on ADMISSION data on HADM_ID.
+
+```{r}
+CARES <- read.csv("C:/Users/vtrea/Desktop/caregivers.csv", header=TRUE, sep=",")
+
+chart1 <- read.csv("C:/Users/vtrea/Desktop/chartevents_1.csv", header=TRUE, sep=",")
+chart2 <- read.csv("C:/Users/vtrea/Desktop/chartevents_2.csv", header=TRUE, sep=",")
+chart3 <- read.csv("C:/Users/vtrea/Desktop/chartevents_3.csv", header=TRUE, sep=",")
+
+CHARTS <- rbind(chart1, rbind(chart2, chart3))
+
+# Using our "nodups" variable, we join the data on the data frame defined by us containing admitted patients and whether or not they recieved a drug during their stay, limited only to a unique patient.
+
+#str(CARES)
+
+caregivers <- merge(x = CHARTS, y = CARES, by = "cgid")
+
+caregivers <- caregivers[!duplicated(caregivers[, "hadm_id"]),]
+
+#str(caregivers)
+#str(nodups)
+
+#In caregivers data, HADM_ID is written as hadm_id, so we can't merge the two together
+
+colnames(caregivers)[4] <- "HADM_ID"
+
+patients <- merge(x = caregivers, y = nodups, by = "HADM_ID")
+
+patients <- patients[!duplicated(patients[, "subject_id"]),]
+```
+
+```{r}
+nodrugpats <- patients[is.na(patients[, "DRUG"]),]
+drugpats <- patients[!is.na(patients[, "DRUG"]),]
+
+#levels(drugpats[, "label"])
+#print(patients)
+```
+
+With this new data, we have only 100 total observations, so to gather the most data and to make understanding the 80 levels of caregiver labels, we will consolidate them all into only 3 levels: MD, PhD, and other, where MD and PhD show forms of higher education whilst other will be the rest.
+
+However, taking a look at the distribution of the data we do not expect to get any useful results.
+
+```{r plot Caregiver Types for No Drugs}
+ggplot(data = nodrugpats) +
+  geom_bar(mapping = aes(x = label, fill=ADMISSION_TYPE)) +
+  xlab("Caregiver Type") +
+  ylab("Count") + 
+  guides(fill=guide_legend(title="Admission Type"))
+```
+
+```{r plot Caregiver Types for Drugs}
+ggplot(data = drugpats) +
+  geom_bar(mapping = aes(x = label, fill=ADMISSION_TYPE)) +
+  xlab("Caregiver Type") +
+  ylab("Count") + 
+  guides(fill=guide_legend(title="Admission Type"))
+```
+
+In any case, the first distribution having patients that recieved no drugs and had a caregiver would not be extremely useful anyway, since we do not expect most patients who did not recieve drugs to have a caregiver to administer them. However for the second distribution, drugs and caregivers, we can see there is an insufficient spread of data to be able to come up with a conclusive hypothesis about relating caregiver status and the safe use of drugs for a patient.
+
+### Interpreting the Results
+
+With the previous test being inconclusive, we must change our hypothesis and possibly explore alternative reasons to fatalities including drugs within non fatal diagnostics.
+
+Hypothesis: In cases where patients were diagnosed with common diagnoses that have low numbers of mortality, patients were more likely to expire if they are administered drugs. Of these instances, there are potential subgroups relating to a patient such as religion or insurance, that may or may not affect them rejecting drugs in certain cases or recieving additional.
+
+## Exploring Mortality Groups
+
+### Religion
+
+One of the most influential topics when it comes to beliefs is Religion. A person's religion, if devout, impacts what a person does and believes. Many religions have different ideas about physical, spiritual, and mental energies, and how each of them should be taken care of. Some of these, such as Christian Scientists, do not believe in medical treatment and could therefore ask to reject or minimize any such treatments, with the possibility of fatal consequence, especially if prescribed an antibiotic after treatment and religious belief led to giving up on treatment quicker.
+
+Since the PATIENT MIMIC 3 data set contains and expire flag that indicates if death ocurred even outside of the hospital, such a hypothesis would be valid.
+
+First, let's begin by assessing the distribution of religion. By plotting it first as a scatterplot, we don't run the risk of overcrowding the data as we would in a simple bar plot, and can pick out the outliers to analyze.
+
+```{r plot Religion Distribution Scatter}
+PATS <- read.csv("C:/Users/vtrea/Desktop/PATIENTS.csv", header=TRUE, sep=",")
+
+names(PATS)[2] <- "SUBJECT_ID.x"
+
+#print(nodups)
+
+# nodups contains the column name SUBJET_ID.x, and must so PATS must be changed from SUBJECT_ID in order to join
+
+patsInfo <- merge(x = PATS, y = nodups, by = "SUBJECT_ID.x")
+
+table <- table(patsInfo["RELIGION"])
+
+plot(c(table), xlab = "Religion Index", ylab = "Count", main = "Religion Distribution")
+```
+
+Now we filter the counts to get all major religions and plot their counts.
+
+```{r plot Top 5 Religion Patients}
+table <- table(patsInfo$RELIGION)
+#str(table)
+x <- c()
+y <- c()
+rowns <- rownames(table)
+rowvals <- c()
+
+for(row in table) {
+  rowvals <- c(rowvals, row)
+}
+
+for(index in 1:length(rowvals)) {
+  if(rowvals[index] > 2500) {
+    x <- c(rowns[index], x)
+    y <- c(rowvals[index], y)
+  }
+}
+#x
+#y
+
+topRel <- c()
+
+relig <- matrix(, nrow = 0, ncol = 0)
+for(r in x) {
+  topRel <- c(topRel, r)
+  relig <- rbind(patsInfo[factor(patsInfo[, "RELIGION"]) == r,], relig)
+}
+
+ggplot(data = relig) +
+  geom_bar(mapping = aes(x = RELIGION, fill=ADMISSION_TYPE)) + 
+  xlab("Religion") +
+  ylab("Count") + 
+  guides(fill=guide_legend(title="Admission Type")) +
+  theme(axis.text.x = element_text(angle = 20, hjust = 1))
+```
+
+```{r eval=FALSE}
+install.packages("reshape")
+```
+
+```{r}
+table <- matrix(nrow = 0, ncol = 3)
+colnames(table) <- c("Total", "No Drug", "Drug")
+
+for(r in topRel) {
+  df <- relig[relig[, "RELIGION"] == r,]
+  nodrugr <- df[is.na(df[, "DRUG"]),]
+  drugr <- df[!is.na(df[, "DRUG"]),]
+  table <- rbind(table, c(nrow(df), nrow(nodrugr), nrow(drugr)))
+}
+
+rownames(table) <- topRel
+
+Names <- topRel
+
+data=data.frame(cbind(table), Names)
+
+library(reshape)
+# melt the data frame for plotting
+data.m <- melt(data, id.vars='Names')
+
+# plot everything
+ggplot(data.m, aes(Names, value)) +   
+  geom_bar(aes(fill = variable), position = "dodge", stat="identity") +
+  theme(axis.text.x = element_text(angle = 20, hjust = 1))
+```
+
+```{r}
+data
+
+par(mfrow = c(2,3))
+for(i in seq(1 : length(topRel))) {
+  pie(c(data[i,]$No.Drug, data[i,]$Drug), labels = c("No Drug", "Drug"), col=rainbow(2), main =topRel[i])
+}
+```
+
+We need to narrow our data down if we are to make any reasonable assumptions. As it stands, a similar percentage of all people of a certain religion tend to not take drugs. However, this comparison is not accurate yet because it is across all diagnoses, and not just one. So we first must reduce our set in order to check for dependence. Let's go back to our least fatal diagnosis: newborn.
+
+```{r}
+table <- matrix(nrow = 0, ncol = 3)
+colnames(table) <- c("Total", "No Drug", "Drug")
+
+for(r in topRel) {
+  df <- relig[relig[, "RELIGION"] == r,]
+  df <- df[df[, "DIAGNOSIS"] == "NEWBORN",]
+  nodrugr <- df[is.na(df[, "DRUG"]),]
+  drugr <- df[!is.na(df[, "DRUG"]),]
+  table <- rbind(table, c(nrow(df), nrow(nodrugr), nrow(drugr)))
+}
+
+rownames(table) <- topRel
+```
+
+```{r}
+table[, 2:3]
+# Run chi-square test
+chisq.test(table[, 2:3])
+
+table[c(2, 4, 5), 2:3]
+# Run chi-square test
+chisq.test(table[c(2, 4, 5), 2:3])
+```
+
+Now we see that the p-value is incredibly high, meaning that we don't reject the null hypothesis that Religion and Drug usage are dependent on each other. This means a person's religion does not influence their decision in taking prescribed medication.
+
+### Interpreting the Results
+
+With the correlation between drug usage in non fatal diagnosis and death, through isolating the main religions of people admitted and treated we looked to see if there was a causation due to a person's religion. After comparing drug intake on the same diagnosis, newborn, through a chi-squared test it's concluded that a person's religious view does not in fact impact the likelihood for him to take drug during critical care. This can be explained by a few reasons:
+
+  - None of the top religions have stringent views on medication
+  - Religions that would have stringent views on medication would likely not seek medical attention in the first place.
+
+
+
+
