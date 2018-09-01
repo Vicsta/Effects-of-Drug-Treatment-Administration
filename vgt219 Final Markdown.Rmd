@@ -11,7 +11,13 @@ html_document:
 
 The main goal of this project is to better understand the role drugs play within a critical hospital admission. This is so we can study if there may be a issue of over diagnosing or over prescribing drugs. This could occur due to many reasons such as doctor's experience, patient characteristics, etc. To approach this problem, the MIMIC-III critical database was used as the primary data source.
 
-Hypothesis: Patients who expired recieved more than the average number of medications than those who didn't for a given diagnosis. Of these instances, majority occured through the facilitation of a doctor with a lesser education.
+*Hypothesis:* Medical treatment for patients is a risk just as much as it is a reward. Patients recieving medical treatment are at a greater risk of death, not just because of the serverity of the ailment, but from imperfect administrations.
+
+Imperfect administrations may include:
+  
+  - Lack of dose when required
+  - Change in dose due to patient and/or caregiver preference in non-critical cases
+  - Overdose of drug when not needed (overdose not only including as a cause of death, mainly presence of drug when not needed)
 
 ```{r}
 # Get our library dependencies
@@ -21,17 +27,18 @@ library("tidyverse")
 
 The datasets were first downloaded locally, then lodaded into R because pulling them directly from the internet took considerable time to run.
 
+The datasets can be found at:
+
+  ADMISSIONS - http://www.hpc.med.nyu.edu/~kannak01/MIMIC3/
+  PRESCRIPTIONS - http://www.hpc.med.nyu.edu/~kannak01/MIMIC3/
+  PATIENTS - http://www.hpc.med.nyu.edu/~kannak01/MIMIC3/
+  caregivers - https://github.com/kannan-kasthuri/kannan-kasthuri.github.io/blob/master/Datasets/MIMIC3/caregivers.csv
+  chartevents_1 - https://github.com/kannan-kasthuri/kannan-kasthuri.github.io/blob/master/Datasets/MIMIC3/chartevents_1.csv
+  chartevents_2 - https://github.com/kannan-kasthuri/kannan-kasthuri.github.io/blob/master/Datasets/MIMIC3/chartevents_2.csv
+  chartevents_3 - https://github.com/kannan-kasthuri/kannan-kasthuri.github.io/blob/master/Datasets/MIMIC3/chartevents_3.csv
+
 ```{r}
 # Load our datasets
-
-URL_start <- "http://www.hpc.med.nyu.edu/~kannak01/MIMIC3/"
-Local <- "C:/Users/vtrea/Desktop/"
-ends <- c("ADMISSIONS.csv", "ICUSTAYS.csv", "INPUTEVENTS_MV.csv", "PATIENTS.csv", "PRESCRIPTIONS.csv")
-
-for(i in seq(length(ends))) {
-  ends[i] = paste(Local, ends[i], sep="")
-}
-
 ADMS <- read.csv("C:/Users/vtrea/Desktop/ADMISSIONS.csv", header=TRUE, sep=",")
 #ICU <- read.csv("C:/Users/vtrea/Desktop/ICUSTAYS.csv", header=TRUE, sep=",")
 #INPUT <- read.csv("C:/Users/vtrea/Desktop/INPUTEVENTS_MV.csv", header=TRUE, sep=",")
@@ -40,42 +47,6 @@ PRES <- read.csv("C:/Users/vtrea/Desktop/PRESCRIPTIONS.csv", header=TRUE, sep=",
 ```
 
 ## Understanding Admission Cause
-
-```{r eval=FALSE}
-?data.frame
-df <- data.frame(stringsAsFactors=FALSE)
-
-#Reduce by Key Prescription table
-
-for(row in 1:nrow(PRES)) {
-  
-  addSubj <- PRES[row, "SUBJECT_ID"]
-  rowLoc <- NA
-  found <- FALSE
-    
-  for(innerRow in 1:nrow(df)) {
-    if(identical(strtoi(df[innerRow, "SUBJECT_ID"]), addSubj)) {
-      rowLoc <- innerRow
-      found <- TRUE
-      break
-    }
-  }
-  
-  if(is.na(rowLoc)) {
-    rowLoc <- nrow(df) + 1
-  }
-  
-  for(col in colnames(PRES)) {
-    #print(paste(df[[rowLoc, col]], PRES[[row, col]], sep=";"))
-    if(!found) {
-      df[rowLoc, col] <- as.character(PRES[[row, col]])
-    } else {
-      df[rowLoc, col] <- paste(as.character(df[[rowLoc, col]]), as.character(PRES[[row, col]]), sep=";")
-    }
-  }
-    df[rowLoc, "SUBJECT_ID"] <- addSubj
-}
-```
 
 To begin, we first want to isolate the answer to the question:
 
@@ -95,19 +66,26 @@ From the above plot, we can see that there are about ~6500 patients that expired
 
 ### Understanding Main Diagnostics
 
+Whenever admitted into a hospital, there are only two outcomes that can happen: you walk out better or you don't. In a similar fashion we can categorize hospital diagnostics, where we only have tow categories:
+
+  1. Ailments that cause the most deaths
+  2. Ailments that you can get better from
+  
+In this way, let us categorize them as "Fatal" and "Non-Fatal" Diagnostics. When exploring the effects of drugs on hospital patients, we need t o take both into account, because specialized treatments differ greatly based on severity of the diagnostic.
+
 #### Fatal Diagnostics
 
-There are thousands of levels in the diagnosis section, so in order to achieve a meaningful visualization, we use a scatterplot in order to try find any outliers to explore further.
+There are thousands of levels in the diagnosis section, so in order to achieve a meaningful visualization, we use a scatterplot in order to try find any outliers to explore further. By using a scatterplot, we can view what cutoffs to apply to most of the data frequencies in order to get a more meaningful result, letting us see which diagnostics occur the most often.
 
 ```{r plot Fatal Diagnosis Distribution Scatter}
 
 DEATHADMS <- ADMS[ADMS[, "DEATHTIME"] != "",]
-  table <- table(DEATHADMS$DIAGNOSIS)
+table <- table(DEATHADMS$DIAGNOSIS)
 
-  plot(c(table), xlab = "Diagnosis Index", ylab = "Count", main = "Fatal Diagnosis Distribution")
+plot(c(table), xlab = "Diagnosis Index", ylab = "Count", main = "Fatal Diagnosis Distribution")
 ```
 
-As we can see, we have a few outliers occuring at above the count of 50, so we can filter these out to achieve a better understanding of the main causes of fatalities within the facility.
+As we can see, we have a few outliers occuring at above the count of 50, so we can filter these out to achieve a better understanding of the main causes of fatalities within the facilities.
 
 ```{r}
 table <- table(DEATHADMS$DIAGNOSIS)
@@ -145,7 +123,7 @@ ggplot(data = filtered) +
   theme(axis.text.x = element_text(angle = 20, hjust = 1))
 ```
 
-Even after narrowing it down to only diagnoses with death counts over 60, we can see that we can do better. 
+Here we can now clearly see that most of the fatal diagnostics occur in the EMERGENCY admission, as expected, with hemorrhage, pneumonia, and sepsis being the top diagnostics. We can further filter these results to view only these top three.
 
 ```{r}
 table <- table(DEATHADMS$DIAGNOSIS)
@@ -174,8 +152,6 @@ for(diag in x) {
 }
 ```
 
-Narrowing it down even further, we can get: 
-
 ```{r plot Top 3 Fatal Diagnostics}
 ggplot(data = fatalfilt) +
   geom_bar(mapping = aes(x = DIAGNOSIS, fill=ADMISSION_TYPE)) +
@@ -184,7 +160,7 @@ ggplot(data = fatalfilt) +
   guides(fill=guide_legend(title="Diagnosis"))
 ```
 
-Now we can see that Sepsis, Intracranial Hemorrhage, and Pneumonia are the top causes of death within the ICU, with Sepsis being slightly ahead of the others.
+All three diagnostics, hemorrhage, pneumonia, and sepsis have very similar results, with sepsis only slightly outnumbering the rest. For fatal diagnostics we will be using sepsis as it has the most data to work with, however with such a small discrepency any of the other two would be just as viable, however it should be noted that they would then have also different standard treatments.
 
 #### Non Fatal Diagnostics
 
@@ -236,11 +212,15 @@ ggplot(data = nonfatalfilt) +
   theme(axis.text.x = element_text(angle = 20, hjust = 1))
 ```
 
+Here we see a very interesting result. For the top non-fatal diagnostics, newborns greatly outnumber the rest. However, from further information from MIMIC, the newborn diagnostic is registered for a neonatal, and most, if not all, of the other diagnostic data is not on neonatals, so it would not be an accurate comparison. Thus, pneumonia or sepsis would make great viable candidate because they are both close to being the second most absolute survived diagnostic, and also appear as the most common fatal ones as well. In this case, we will pick pneumonia as it is less fatal than sepsis in general.
+
 ## Effect of Drugs on Mortality
+
+Now that we have the diagnostics we want to search into, sepsis and pneumonia, we can begin seeing if their death rates have a correlation with the rate at which patients are administered drugs.
 
 ### Exploration on Overall Data
 
-In order to explore the correlations between patient deaths and drug usage, we need to join the prescription data with the admission data.
+In order to explore the correlations between patient deaths and drug usage, we need to join the prescription data with the admission data. Admissions contains information about the patient such as their ID and diagnostic, while precriptions includes what drugs they recieved, if any. According to the MIMIC website, these two databases are linked by the HADM_ID column.
 
 ```{r}
 ADMPRES <- merge(x = ADMS, y = PRES, by = "HADM_ID", all.x = TRUE, all.y = FALSE)
@@ -248,17 +228,19 @@ ADMPRES <- merge(x = ADMS, y = PRES, by = "HADM_ID", all.x = TRUE, all.y = FALSE
 
 Performing a left outer join we make sure we keep patients who were admitted but did not recieve any drugs.
 
-First, we want to explore tests to see whether or not death is related to the presence of a prescription using a Chi-square test.
+First, we want to explore tests to see whether or not death is related to the presence of a prescription using a Chi-square test. To do so, we need to find the number of people who had drugs and didn't have drugs, then see how their numbers of deaths compare. To start this, we need remove all duplicate instances of patients from our set.
 
 ```{r}
 nodups <- ADMPRES[!duplicated(ADMPRES[, "SUBJECT_ID.x"]),]
 ```
 
-By removing duplicates we can make sure we only take one entry per person.
+By removing duplicates we can make sure we only take one entry per person so we don't double count a death.
 
 ```{r eval=FALSE}
 install.packages("plotrix")
 ```
+
+Then we can create a 3d pie chart to visualize the distribution of people who had drugs versus people who didn't recieve them
 
 ```{r}
 library(plotrix)
@@ -269,6 +251,8 @@ table <- table(is.na(nodups["DRUG"]))
 
 pie3D(table, theta=pi/3, explode=0.2, labels=c("Drugs Used", "No Drugs Used"))
 ```
+
+We can see that abouth a fifth of everyone who was admitted didn't recieve any type of drug. Now we want to set up a matrix in ordeer to run association tests on drug usage and death. We create a 2x2 matrix and then run a chi squared test because we have a small matrix.
 
 ```{r}
 nodrug <- nodups[is.na(nodups[, "DRUG"]),]
@@ -296,17 +280,15 @@ tab
 chisq.test(tab)
 ```
 
-Thus, from the smalle p-value we can infer that there is good association between patient deaths (DEATHTIME) and the administration of drugs (DRUG).
+Thus, from the small p-value we can infer that there is good association between patient deaths (DEATHTIME) and the administration of drugs (DRUG).
 
 However, this result does not completely validate our assumption that prescription accidents are a cause of death. Our Chi squared test only tells us that more often in procedures that use drugs, a patient death occurs. This can be entireley explained by the fact that more risky procedures and life threatening ones would require drugs whereas lesser risk ones would not. 
 
-We can further explore our assumption by then testing the correlation both in life threatening and non life threatening cases.
+We can further explore our assumption by then testing the correlation both in life threatening and non life threatening cases by now narrowing down our association to the two types of diagnostics we outline earlier: fatal and non-fatal.
 
 ### Drugs in Fatal Cases
 
 From earlier, we found that SEPSIS is the cause of most patient deaths, so from our filtered data frames without duplicates and on certain parameters, we isolate only those who are diagnosed with sepsis, then run a Chi-squared test to check correlation again.
-
-Because the amount of data is small, I also run a  Fisher's exact test.
 
 ```{r}
 death_nodrugf <- death_nodrug[death_nodrug[, "DIAGNOSIS"] == "SEPSIS",]
@@ -329,11 +311,9 @@ colnames(tab)<-c("DRUG|","NO DRUG")
 tab
 # Run chi-square test
 chisq.test(tab)
-# Run a Fisher test because data sample is small
-fisher.test(tab)
 ```
 
-As we can see, here the p-value has drastically changed, as is now above the 0.05 significance level, meaing we cannot reject the null hypothesis that the odds of dying with drugs are the same as the odds of dying without drugs.
+As we can see, here the p-value has drastically changed, as is now above the 0.05 significance level, meaing we cannot reject the null hypothesis that the odds of dying with drugs are the same as the odds of dying without drugs in the case of fatal diagnostics.
 
 ### Drugs in Non-Fatal Cases
 
@@ -360,11 +340,9 @@ colnames(tab)<-c("DRUG|","NO DRUG")
 tab
 # Run chi-square test
 chisq.test(tab)
-# Run a Fisher test because data sample  relatively small
-fisher.test(tab)
 ```
 
-Here we can see that the while the p-value has incresed, it tsill remains below the 0.05 level, meaning we can reject the null hypothesis that states the odds of dying with drugs are the same as the odds of dying without drugs.
+Here we can see that the while the p-value has incresed, it still remains below the 0.05 level, meaning we can reject the null hypothesis that states the odds of dying with drugs are the same as the odds of dying without drugs.
 
 ### Interpreting the Results
 
@@ -379,14 +357,15 @@ Running our tests again, we can see that our p-value for pneumonia, the second h
 
 Due to these conditions, it would be wise to re-evaluate our hypothesis. Rather than taking a broad stance on the use of drugs in all cases, we should narrow our scope down to better identify the use of drugs where it is less needed as a cause for patient expiry.
 
-Hypothesis: In cases where patients were diagnosed with common diagnoses that have low numbers of mortality, patients were more likely to expire if they are administered drugs. Of these instances, majority occured through the facilitation of a caregiver with a lesser experience.
+*Hypothesis:* Patients recieving medical treatment in cases of non-fatal and common diagnoses are at a greater risk of death, not just because of the serverity of the ailment, but from imperfect administrations.
 
 ## Exploring Caregiver Qualifications
 
-Chart events joins on caregivers
-admissions joins on chart events on HADM_ID
+Now that we have established al ink between drug administration and deaths, we want to look into why such an administration would occur. The first place to start looking would be at the person who administers the drug: the caregiver.
 
-In order to get the caregiver data joined on the admission / prescription data, we need to first link it to the CHARTEVENTS data on CGID. From there, the CHARTEVENTS data can be joined on ADMISSION data on HADM_ID.
+In order to pair up the caregiver data with the patient data, we also need to use the chartevents data, which tells us which caregiver attended the patient during a specific event. Chartevents joins on caregivers by the caregiver id, cgid, while admissions joins on the chartevents data on the patient's HADM_ID.
+
+In order to get the caregiver data joined on the admission / prescription data, we need to first link it to the CHARTEVENTS data on CGID. From there, the joined CHARTEVENTS data can be joined on ADMISSION data on HADM_ID.
 
 ```{r}
 CARES <- read.csv("C:/Users/vtrea/Desktop/caregivers.csv", header=TRUE, sep=",")
@@ -424,6 +403,8 @@ drugpats <- patients[!is.na(patients[, "DRUG"]),]
 #levels(drugpats[, "label"])
 #print(patients)
 ```
+
+Now with this data comes the question, what could be a factor in a caregiver's decision to give a patient a drug? Here comes into play the caregiver's knowledge: does a caregiver know enough about a diagnosis to be able to tell if a drug that has been prescribed to a patient is in the correct form i.e. is it the right type of drug or the right amount? In the data set, we have a column named "label", which is the caregiver's title, and we can use this to make assumptions about his/her experience in the field.
 
 With this new data, we have only 100 total observations, so to gather the most data and to make understanding the 80 levels of caregiver labels, we will consolidate them all into only 3 levels: MD, PhD, and other, where MD and PhD show forms of higher education whilst other will be the rest.
 
@@ -559,7 +540,7 @@ for(i in seq(1 : length(topRel))) {
 }
 ```
 
-We need to narrow our data down if we are to make any reasonable assumptions. As it stands, a similar percentage of all people of a certain religion tend to not take drugs. However, this comparison is not accurate yet because it is across all diagnoses, and not just one. So we first must reduce our set in order to check for dependence. Let's go back to our least fatal diagnosis: PNEUMONIA.
+We need to narrow our data down if we are to make any reasonable assumptions. As it stands, a similar percentage of all people of a certain religion tend to not take drugs. However, this comparison is not accurate yet because it is across all diagnoses, and not just one. So we first must reduce our set in order to check for dependence. Let's go back to our non-fatal diagnosis: PNEUMONIA.
 
 ```{r}
 table <- matrix(nrow = 0, ncol = 2)
@@ -588,28 +569,33 @@ rownames(table) <- rowNames
 
 ```{r}
 table
-# Run chi-square test
 fisher.test(table)
 ```
 
-Now we see that the p-value is incredibly high, meaning that we don't reject the null hypothesis that Religion and Drug usage are dependent on each other. This means a person's religion does not influence their decision in taking prescribed medication.
+Now we see that the p-value is high, meaning that we don't reject the null hypothesis that Religion and Drug usage are dependent on each other. This means a person's religion does not influence their decision in taking prescribed medication.
 
 ### Interpreting the Results
 
-With the correlation between drug usage in non fatal diagnosis and death, through isolating the main religions of people admitted and treated we looked to see if there was a causation due to a person's religion. After comparing drug intake on the same diagnosis, PNEUMONIA, through a chi-squared test it's concluded that a person's religious view does not in fact impact the likelihood for him to take drug during critical care. This can be explained by a few reasons:
+With the correlation between drug usage in non fatal diagnosis and death, through isolating the main religions of people admitted and treated we looked to see if there was a causation due to a person's religion. After comparing drug intake on the same diagnosis, PNEUMONIA, through a fisher test it's concluded that a person's religious view does not in fact impact the likelihood for him to take drug during critical care. This can be explained by a few reasons:
 
   - None of the top religions have stringent views on medication
   - Religions that would have stringent views on medication would likely not seek medical attention in the first place.
 
 ### Ethnicity
 
-Similar to age is ethnicity.
+If a person's religion doesn't dictate how they act, are there any other cultural significances that could?
+
+A person's ethnicity may be reflective of the cultural ideas spawned in that area. In the Orient, there is a lot more emphasis on traditional medicinal techniques opposed to the Western modernization.Perhaps by analyzing the admitted patients' ethnicities, we can find a correlation between certain ethnic groups/beliefs and drug usage.
+
+By first making a scatterplot we can view the distribution of ethnicities.
 
 ```{r plot Ethnicity Distribution Scatter}
 table <- table(patsInfo["ETHNICITY"])
 
 plot(c(table), xlab = "Ethnic Index", ylab = "Count", main = "Ethnic Distribution")
 ```
+
+Filtering out only the occurnces of over 1000, we can get the top 5 ethnic groups admitted.
 
 ```{r plot Top 5 Ethnicity Patients}
 table <- table(patsInfo$ETHNICITY)
@@ -648,6 +634,8 @@ ggplot(data = eth) +
   theme(axis.text.x = element_text(angle = 20, hjust = 1))
 ```
 
+Using this data, we can melt the multiple bar plots to view the total number of each ethnicity, and the number of drugs and no drug usages relative to each other.
+
 ```{r plot Ethnicity Drug Compare}
 table <- matrix(nrow = 0, ncol = 3)
 colnames(table) <- c("Total", "No Drug", "Drug")
@@ -684,6 +672,8 @@ for(i in seq(1 : length(topEth))) {
 }
 ```
 
+INterestingly enough, most ethnicities have similar ratios of taking drugs, with the exception of those ethnicities which are otherwise unknown or not falling into a main category.
+
 ```{r}
 table <- matrix(nrow = 0, ncol = 2)
 table2 <- matrix(nrow = 0, ncol = 2)
@@ -717,9 +707,23 @@ table[, c(1, 2)]
 fisher.test(table[, c(1, 2)])
 ```
 
+### Interpreting the Results
+
+Unsurprisingly, with such similarities in the ratios of drug usage there isn't a clear dependency on ethnicity to dictate drug usage. However, the "uknown" and "other" categories were drastically different, hinting that there may still be some areas in which traditional medicines are valued over modern medicines from hospitals.
+
+Other reasons why Ethnicity might not have an impact on drug usage:
+
+  - Those who don't believe in modern medicines wouldn't go to a hospital in the first place
+  - Even with cultural differences, people still go to the hospital in faith that they will be treated with the proper drugs
+  - Cultural beliefs in traditional medicines has dwindled over the past years with the introduction of so many new innovative technologies and information.
+
 #### Insurance
 
-Is it simply a choice or a lifestyle?
+If the use of drugs isn't necessarily a choice in the hospital setting, what else could be indicative?
+
+The sad truth is that not all people have the same standards of living, many are unforunate enough to be put into a setting where they aren't as economically well of as the rest of the population. One metric we can try get a glimpse of this in is the patient's insurance. Those with private insurance and don't need government assistance are generally better off than those without. Using this, we can try determine if a person's use of drugs is purely a choice, often made by the hospital, or are some unfortunate enough to not be able to accept it.
+
+We can first see if there is any distinguishable difference between people's differences in insurance: do people of different ethnicities have vastly different insurances?
 
 ```{r plot Insurances per Ethnicity}
 par(mfrow = c(2,3))
@@ -730,6 +734,10 @@ for(r in topEth) {
   pie(table, col=rainbow(length(table)), main=r)
 }
 ```
+
+The main difference in insurances occurs that blacks have a higher percent of government insurance and hispanics have a higher percent of medicaid. These observations shouldn't skew the data.
+
+Now, we can run an examination on solely the insurance data to find out if different insurance types offer different types of drug treatments.
 
 ```{r}
 table <- matrix(nrow = 0, ncol = 2)
@@ -762,7 +770,28 @@ table
 fisher.test(table)
 ```
 
+Running a fisher test we see that we have a miniscule p-value, meaning that we reject the null hypothesis that the odds of having drugs on different types of insurances are the same.
+
 ### Interpreting the Results
+
+Seeing that ethnicities did not bear any strong correlation with drug usage, it is not surprising to see that insurances within ethnicities are rather evenly spread even when there appears to be a correlation between insurance type and the administration of drugs.
+
+We can see their percentages by plotting them in a pie chart:
+
+```{r}
+par(mfrow = c(2,3))
+pie(c(table[1,2], table[1,1] - table[1,2]), labels=c("Deaths", "Non Deaths"), col=rainbow(2), main="Government")
+pie(c(table[2,2], table[2,1] - table[2,2]), labels=c("Deaths", "Non Deaths"), col=rainbow(2), main="Medicaid")
+pie(c(table[3,2], table[3,1] - table[3,2]), labels=c("Deaths", "Non Deaths"), col=rainbow(2), main="Medicare")
+pie(c(table[4,2], table[4,1] - table[4,2]), labels=c("Deaths", "Non Deaths"), col=rainbow(2), main="Private")
+pie(c(table[5,2], table[5,1] - table[5,2]), labels=c("Deaths", "Non Deaths"), col=rainbow(2), main="Self Pay")
+```
+
+As we can see, Self Pay and Government have no deaths, however this should be taken lightly because there are almost no data points to begin with. Of the three remaining, Medicare has the highest rate of Deaths when it comes to the use of drugs in treatment, with medicaid and private following.
+
+This agrees with our assumption that those who have private insurances are usually better well off, able to afford any care they might need. With the other forms of insurance, there can be complications with securing the proper amount of treatment leading to mortalities possibly due to the incorrect use of drugs.
+
+However, we shouldn't bar the deaths occuring with drugs only to insurance type and economic status of a patient, there is yet one important category we can explore: age. Medicare is primarily focused towards those above the age of 65, so we must examine this aspect of insurance as well.
 
 ### Age
 
@@ -770,6 +799,8 @@ fisher.test(table)
 #Takes a while to install
 install.packages("eeptools")
 ```
+
+First, let's take a look at the age distribution using gender as a way to split the data into multiple bucekts. Unforunately, there is no clumn simply labeled "age", but MIMIC provides us a way to create it. According to the page, a patient's age is given by the difference between their first admission time and their date of birth. Therefore, we can obtain age by using a table which is made up from the join of admissions, which contains the admission time, and patients, which contains the date of birth. Using these, we can calculate the age of the patients, put into a vector and then bind the vector as a column to the end of our data set.
 
 ```{r plot Gender Distribution}
 library(eeptools)
@@ -787,6 +818,10 @@ withAge <- withAge[withAge[,"allAges"] < 100,]
 boxplot(allAges~GENDER,data=withAge, main="Age Distribution", 
   	xlab="Gender", ylab="Age")
 ```
+
+We can see that actually most of our patient data occurs for people who are later in life rather than those who are young. If the distribution is spread heavily between old and young, we could be seeing drugs as a cause of death in those who are older and not younger, which could have to do with simply the way their body reacts to the medicine.
+
+To understand these ages better, we should first reduce the age column into three distinct age groups: 20-39, 40-59, and 60+.
 
 ```{r}
 ageGroups <- c("20-39 drugs", "40-59 drugs", "60+ drugs")
@@ -852,6 +887,8 @@ rownames(matrix2) <- ageGroups2
 colnames(matrix2) <- c("Total", "Deaths")
 ```
 
+In doing so, we can then see the ratios of deaths containing drugs of each age gropu more easily.
+
 ```{r plot Age Group Drug Percent}
 par(mfrow = c(2,3))
 pie(c(ng1, g1), labels = c("No Drug", "Drug"), col=rainbow(2), main ="20-39")
@@ -862,9 +899,112 @@ pie(c(ng2d, g2d), labels = c("No Drug", "Drug"), col=rainbow(2), main ="40-59 De
 pie(c(ng3d, g3d), labels = c("No Drug", "Drug"), col=rainbow(2), main ="60+ Deaths")
 ```
 
+Interestingly enough, across all age groups we can see that generally the same percent of people who are diagnosed use drugs versus not using drugs. Of those that died, the younger population seems to have a higher percent of deaths when not using drugs.
+
 ```{r}
 matrix
 fisher.test(matrix)
 ```
 
+Testing our matrix which contains the number of people who were treated with drugs and the number that died as a result of the diagnostic, we get a ver ysmall p-value, indicating that there is a relationship between the age group and death including drugs.
+
+### Interpreting the Results
+
+Our results point that age is a factor for people who have died from a diagnostic and were administered drugs. Currently, it is not particularly clear whether as a person gets older, drugs contribute to the cause of death, or just that ailment severity increases when getting older. In order to further examine this, we can try compare percentages of drug treatments in those who did not pass.
+
+```{r}
+g1 <- 0
+g2 <- 0
+g3 <- 0
+g1nd <- 0
+g2nd <- 0
+g3nd <- 0
+withAgeD <- withAge[!is.na(withAge[, "DRUG"]),]
+for(r in 1:nrow(withAgeD)) {
+  if(withAgeD[r, "allAges"] >= 60) {
+    g3 <- g3 + 1
+    if(withAgeD[r, "EXPIRE_FLAG"] == "0") {
+      g3nd <- g3nd + 1
+    }
+  } else if(withAgeD[r, "allAges"] >= 40) {
+    g2 <- g2 + 1
+    if(withAgeD[r, "EXPIRE_FLAG"] == "0") {
+      g2nd <- g2nd + 1
+    }
+  } else if(withAgeD[r, "allAges"] >= 20) {
+    g1 <- g1 + 1
+    if(withAgeD[r, "EXPIRE_FLAG"] == "0") {
+      g1nd <- g1nd + 1
+    }
+  } 
+}
+
+ng1 <- 0
+ng2 <- 0
+ng3 <- 0
+ng1nd <- 0
+ng2nd <- 0
+ng3nd <- 0
+nwithAgeD <- withAge[is.na(withAge[, "DRUG"]),]
+for(r in 1:nrow(nwithAgeD)) {
+  if(nwithAgeD[r, "allAges"] >= 60) {
+    ng3 <- ng3 + 1
+    if(nwithAgeD[r, "EXPIRE_FLAG"] == "0") {
+      ng3nd <- ng3nd + 1
+    }
+  } else if(nwithAgeD[r, "allAges"] >= 40) {
+    ng2 <- ng2 + 1
+    if(nwithAgeD[r, "EXPIRE_FLAG"] == "0") {
+      ng2nd <- ng2nd + 1
+    }
+  } else if(nwithAgeD[r, "allAges"] >= 20) {
+    ng1 <- ng1 + 1
+    if(nwithAgeD[r, "EXPIRE_FLAG"] == "0") {
+      ng1nd <- ng1nd + 1
+    }
+  } 
+}
+```
+
+In doing so, we can then see the ratios of deaths containing drugs of each age group more easily.
+
+```{r plot Age Group Survival Drug Percent}
+par(mfrow = c(1,3))
+pie(c(ng1nd, g1nd), labels = c("No Drug", "Drug"), col=rainbow(2), main ="20-39 No Deaths")
+pie(c(ng2nd, g2nd), labels = c("No Drug", "Drug"), col=rainbow(2), main ="40-59 No Deaths")
+pie(c(ng3nd, g3nd), labels = c("No Drug", "Drug"), col=rainbow(2), main ="60+ No Deaths")
+
+print(paste("Chance of Surviving 20-39", ng1nd*100/ng1))
+print(paste("Chance of Surviving 40-59", ng2nd*100/ng2))
+print(paste("Chance of Surviving 60+", ng3nd*100/ng3))
+```
+
+Our graph tells us that middle aged people survived more when they had drugs, however we see an increase in cases in older people (60+) where they survived without the use of any drugs. We see as age goes from young to middle aged, that the chance to survive actually decreases, with those who survived almost all having taken drugs for their illness, which would normally point to mean that as age increases, the body actually needs drug administrations to help it survive, which is not what our hypothesis states. However, if this were true we would see an increase in the ratio of drug usage in those who survived when going from middle aged to old groups while the percent of being cured would go down further, because as the body gets weaker, and drug strength remains constant, we wouldn't expect as many people to make it. We see quite the opposite however, that more people survive when older and more do so without the use of drugs.
+
+Why is this?
+
+In our results from earlier about the percent of deaths and how they either were or were not administered drugs, we saw that younger people had a higher percent of death in those that were below 60 than above it. This could be due to the fact that people may think younger patients have a higher chance of surviving, because they are younger they are more "full of life" and might not treat them with drugs properly, possibly treating them with too little. As people get older, they expect the chance of death to be higher because of their weakened state, and take more precaution in administering the right kind of drugs because their state is more fragile and responsive.
+
 ## Conclusion
+
+*Hypothesis:* Medical treatment for patients is a risk just as much as it is a reward. Patients recieving medical treatment for otherwise recoverable diagnoses are at a greater risk of death, not just because of the serverity of the ailment, but from imperfect administrations that may occur as a consequence of a patient's happenstance.
+
+Our above analysis was conducted using two of the most prevalent diagnostics: PNEUMONIA, and SEPSIS. In our analysis, we treated SEPSIS as a primary cause of fatalities, and PNEUMONIA as a primary diagnosis that could be recovered from without intense intervention. bY using repeated assocation tests, we found which certain circumstances led patients to be in this heightened state of danger. The two most prevalent results were:
+
+  1. Those on government assisted insurance such as medicare and medicaid were at a higher risk of reciving improper drug treatments, which can be attributed to being unable to afford the proper care.
+  2. Those who were younger often suffered a higher percentage of deaths in cases where they were administered drugs, which can be attributed due to the fact of percieved health of someone who is young rather than old. Young children are likelier to be though of as energetic and strong, while older patients are seen as more docile and fragile. This percieved view could lead those who are older to recieve much more detailed care, as there is a percieved higher chance of death. While it is generally assumed that the older you get the weaker your body becomes, there is not a consistent decrease in survival rate, and in fact there is an increase in the rate of those who survived without drugs, indicating that their needs are more precisely met to recover. In some cases, not being given any drugs whatsoever.
+  
+Due to these results, we can accept our hypothesis that there is in fact some inaccurate drug treatments that may increase the chances of patient expiry.
+
+THe usefulness of this statement is to show the precision with which a patient must be treated with. Even though drugs are created to help fix ailments, abusing them can prove to be fatal as well. With bacteria also becoming more resistant to drugs, and different types of drugs being needed to be created every year to combat them, it's important to be aware that there is no fixed solution on treating illnesses. A lot of research should go not only into how to fight something, but in how to defend against it.
+  
+## Next Steps
+
+There are a few areas of further work that could be done to better understand the circumstances surrounding the adequate administration of drugs:
+
+  - As seen earlier in the data set, an insteresting point to look at would have been to analyze who administered or authorized drug treatments for patients. If such data were more eadily available and could be compared with patients easily, then it might show if there are certain hospital practices i.e. staff being underqualified or unknowledgable enough in certain areas, that lead to such treatments to fail.
+  - On the subject of insurances, it would do better to understand exactly why certain insurances led to more deaths. Some of the categories shown, such as Government and Self Pay, had too little data to provide substantial insight as to their correlations.
+
+In order to validate these reasonings, other tests would also have to be conducted. Most notably, they must be tested on other diagnoses as well. When using PNEUMONIA as the main diagnostic for recoverable diagnoses, I was at first skeptical for finding any cases where a patient survived without the administration of drugs being that pneumonia also has a bacterial strain that can be deadly. In order to better validate with pneumonia, two separate tests would have to be conducted: using viral pneumonia and bacterial pneumonia. However, in the case of bacterial pneumonia, such data that would show cases without drug usage might not be possible since a standard treatment of bacterial pneumonia is the administration of antibiotics. Then, to get a better idea for the use of drugs, one would have to go deeper into just what types of drugs are administered, their quantities, and the patient's current conditions upon recieving the treatment.
+
+Conversely, other tests for validation can be performed on diagnoses where drugs can be seen as purely optional (except for in extreme cases of course) such as more physical rather than biological accidents. In all cases, further anaylsis could be conducted on the effect drugs can have on a person's chemical levels that can be related to death.
